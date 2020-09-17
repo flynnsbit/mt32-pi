@@ -24,12 +24,15 @@
 #define _kernel_h
 
 #include <circle_stdlib_app.h>
+#include <circle/bcm54213.h>
 #include <circle/cputhrottle.h>
 #include <circle/gpiomanager.h>
 #include <circle/i2cmaster.h>
 #include <circle/sched/scheduler.h>
 #include <circle/spimaster.h>
 #include <circle/timer.h>
+#include <wlan/bcm4343.h>
+#include <wlan/hostap/wpa_supplicant/wpasupplicant.h>
 
 #include "config.h"
 #include "mt32pi.h"
@@ -55,6 +58,15 @@ protected:
 	CUSBHCIDevice m_USBHCI;
 	CEMMCDevice m_EMMC;
 	FATFS m_SDFileSystem;
+
+	// Networking
+	CNetSubSystem* m_pNet;
+	CBcm4343Device m_WLAN;
+#if RASPPI >= 4
+	CBcm54213Device	m_Bcm54213;
+#endif
+	CWPASupplicant m_WPASupplicant;
+
 	CI2CMaster m_I2CMaster;
 	CSPIMaster m_SPIMaster;
 	CGPIOManager m_GPIOManager;

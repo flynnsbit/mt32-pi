@@ -22,6 +22,8 @@
 
 #include <circle/i2ssoundbasedevice.h>
 #include <circle/memory.h>
+#include <circle/net/in.h>
+#include <circle/net/socket.h>
 #include <circle/pwmsoundbasedevice.h>
 #include <circle/serial.h>
 
@@ -81,6 +83,9 @@ CMT32Pi::CMT32Pi(CI2CMaster* pI2CMaster, CSPIMaster* pSPIMaster, CInterruptSyste
 	  m_bSerialMIDIEnabled(false),
 	  m_pUSBMIDIDevice(nullptr),
 	  m_pUSBMassStorageDevice(nullptr),
+
+	  m_bNetworkReady(false),
+	  m_pAppleMIDIParticipant(nullptr),
 
 	  m_bActiveSenseFlag(false),
 	  m_nActiveSenseTime(0),
@@ -167,7 +172,7 @@ bool CMT32Pi::Initialize(bool bSerialMIDIAvailable)
 	if (m_pPisound->Initialize())
 	{
 		pLogger->Write(MT32PiName, LogWarning, "Blokas Pisound detected");
-		m_pPisound->RegisterMIDIReceiveHandler(MIDIReceiveHandler);
+		m_pPisound->RegisterMIDIReceiveHandler(IRQMIDIReceiveHandler);
 		m_bSerialMIDIEnabled = false;
 	}
 	else
@@ -308,6 +313,8 @@ void CMT32Pi::MainTask()
 {
 	CConfig* const pConfig = CConfig::Get();
 	CLogger* const pLogger = CLogger::Get();
+	CScheduler* const pScheduler = CScheduler::Get();
+	CNetSubSystem* const pNet = CNetSubSystem::Get();
 
 	pLogger->Write(MT32PiName, LogNotice, "Main task on Core 0 starting up");
 
@@ -324,6 +331,50 @@ void CMT32Pi::MainTask()
 
 		// Process events
 		ProcessEventQueue();
+
+		// Update network
+		if (pNet)
+		{
+			const bool bNetIsRunning = pNet->IsRunning();
+
+			if (!m_bNetworkReady && bNetIsRunning)
+			{
+				m_bNetworkReady = true;
+
+				CString IPString;
+				pNet->GetConfig()->GetIPAddress ()->Format(&IPString);
+				pLogger->Write(MT32PiName, LogNotice, "Network up and running at: %s", static_cast<const char *>(IPString));
+				LCDLog(TLCDLogType::Notice, "WiFi: %s", static_cast<const char*>(IPString));
+
+				if (pConfig->NetworkRTPMIDI)
+				{
+					m_pAppleMIDIParticipant = new CAppleMIDIParticipant(&m_Random);
+					if (!m_pAppleMIDIParticipant->Initialize())
+					{
+						pLogger->Write(MT32PiName, LogError, "Failed to init AppleMIDI receiver");
+						delete m_pAppleMIDIParticipant;
+						m_pAppleMIDIParticipant = nullptr;
+					}
+					else
+					{
+						m_pAppleMIDIParticipant->RegisterMIDIReceiveHandler(NetMIDIReceiveHandler);
+						pLogger->Write(MT32PiName, LogNotice, "AppleMIDI receiver initialized");
+					}
+				}
+
+				pLogger->Write(MT32PiName, LogNotice, "Web server up");
+			}
+			else if (m_bNetworkReady && !bNetIsRunning)
+			{
+				m_bNetworkReady = false;
+				pLogger->Write(MT32PiName, LogNotice, "Network disconnected.");
+				LCDLog(TLCDLogType::Notice, "WiFi disconnected!");
+
+				delete m_pAppleMIDIParticipant;
+			}
+
+			pNet->Process();
+		}
 
 		unsigned ticks = m_pTimer->GetTicks();
 
@@ -361,7 +412,11 @@ void CMT32Pi::MainTask()
 		// Check for USB PnP events
 		if (CConfig::Get()->SystemUSB)
 			UpdateUSB();
+
+		// Allow other tasks to run
+		pScheduler->Yield();
 	}
+
 
 	// Stop audio
 	m_pSound->Cancel();
@@ -1023,10 +1078,10 @@ void CMT32Pi::USBMIDIDeviceRemovedHandler(CDevice* pDevice, void* pContext)
 // The following handlers are called from interrupt context, enqueue into ring buffer for main thread
 void CMT32Pi::USBMIDIPacketHandler(unsigned nCable, u8* pPacket, unsigned nLength)
 {
-	MIDIReceiveHandler(pPacket, nLength);
+	IRQMIDIReceiveHandler(pPacket, nLength);
 }
 
-void CMT32Pi::MIDIReceiveHandler(const u8* pData, size_t nSize)
+void CMT32Pi::IRQMIDIReceiveHandler(const u8* pData, size_t nSize)
 {
 	assert(s_pThis != nullptr);
 
@@ -1037,4 +1092,12 @@ void CMT32Pi::MIDIReceiveHandler(const u8* pData, size_t nSize)
 		CLogger::Get()->Write(MT32PiName, LogWarning, pErrorString);
 		s_pThis->LCDLog(TLCDLogType::Error, pErrorString);
 	}
+}
+
+// Called from task context, parse immediately
+void CMT32Pi::NetMIDIReceiveHandler(const u8* pData, size_t nSize)
+{
+	assert(s_pThis != nullptr);
+
+	s_pThis->ParseMIDIBytes(pData, nSize);
 }

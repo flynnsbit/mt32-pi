@@ -24,6 +24,7 @@
 #define _mt32pi_h
 
 #include <circle/actled.h>
+#include <circle/bcmrandom.h>
 #include <circle/cputhrottle.h>
 #include <circle/devicenameservice.h>
 #include <circle/gpiomanager.h>
@@ -31,6 +32,7 @@
 #include <circle/interrupt.h>
 #include <circle/logger.h>
 #include <circle/multicore.h>
+#include <circle/net/netsubsystem.h>
 #include <circle/sched/scheduler.h>
 #include <circle/soundbasedevice.h>
 #include <circle/spimaster.h>
@@ -47,6 +49,7 @@
 #include "event.h"
 #include "lcd/synthlcd.h"
 #include "midiparser.h"
+#include "net/applemidi.h"
 #include "pisound.h"
 #include "power.h"
 #include "ringbuffer.h"
@@ -130,6 +133,8 @@ private:
 	CUSBHCIDevice* m_pUSBHCI;
 	FATFS m_USBFileSystem;
 
+	CBcmRandomNumberGenerator m_Random;
+
 	CSynthLCD* m_pLCD;
 	unsigned m_nLCDUpdateTime;
 
@@ -151,6 +156,10 @@ private:
 	// USB MIDI
 	CUSBMIDIDevice* volatile m_pUSBMIDIDevice;
 	CUSBBulkOnlyMassStorageDevice* volatile m_pUSBMassStorageDevice;
+
+	// Networking
+	bool m_bNetworkReady;
+	CAppleMIDIParticipant* m_pAppleMIDIParticipant;
 
 	bool m_bActiveSenseFlag;
 	unsigned m_nActiveSenseTime;
@@ -181,7 +190,8 @@ private:
 	static void EventHandler(const TEvent& Event);
 	static void USBMIDIDeviceRemovedHandler(CDevice* pDevice, void* pContext);
 	static void USBMIDIPacketHandler(unsigned nCable, u8* pPacket, unsigned nLength);
-	static void MIDIReceiveHandler(const u8* pData, size_t nSize);
+	static void IRQMIDIReceiveHandler(const u8* pData, size_t nSize);
+	static void NetMIDIReceiveHandler(const u8* pData, size_t nSize);
 
 	static CMT32Pi* s_pThis;
 };

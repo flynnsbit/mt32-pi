@@ -20,11 +20,15 @@
 // mt32-pi. If not, see <http://www.gnu.org/licenses/>.
 //
 
+#include "config.h"
 #include "kernel.h"
 
 #ifndef MT32_PI_VERSION
 #define MT32_PI_VERSION "<unknown>"
 #endif
+
+const char WLANFirmwarePath[] = "SD:/firmware/";
+const char WLANConfigFile[]   = "SD:/wpa_supplicant.conf";
 
 CKernel::CKernel(void)
 	: CStdlibApp("mt32-pi"),
@@ -39,6 +43,10 @@ CKernel::CKernel(void)
 	  m_USBHCI(&mInterrupt, &m_Timer, true),
 	  m_EMMC(&mInterrupt, &m_Timer, &mActLED),
 	  m_SDFileSystem{},
+
+	  m_pNet(nullptr),
+	  m_WLAN(WLANFirmwarePath),
+	  m_WPASupplicant(WLANConfigFile),
 
 	  m_I2CMaster(1, true),
 	  m_GPIOManager(&mInterrupt),
@@ -109,6 +117,49 @@ bool CKernel::Initialize(void)
 	// Init custom memory allocator
 	if (!m_Allocator.Initialize())
 		return false;
+
+	// Init networking
+	TNetDeviceType NetDeviceType = NetDeviceTypeUnknown;
+
+	if (m_Config.NetworkMode == CConfig::TNetworkMode::WiFi)
+	{
+		m_Logger.Write(GetKernelName(), LogNotice, "Enabling Wi-Fi");
+		NetDeviceType = NetDeviceTypeWLAN;
+
+		if (!m_WLAN.Initialize())
+			return false;
+
+		if (!m_WPASupplicant.Initialize())
+			return false;
+	}
+	else if (m_Config.NetworkMode == CConfig::TNetworkMode::Ethernet)
+	{
+		m_Logger.Write(GetKernelName(), LogNotice, "Enabling Ethernet");
+		NetDeviceType = NetDeviceTypeEthernet;
+
+#if RASPPI >= 4
+		if (!m_Bcm54213.Initialize())
+			return false;
+#endif
+	}
+
+	if (NetDeviceType != NetDeviceTypeUnknown)
+	{
+		if (m_Config.NetworkDHCP)
+			m_pNet = new CNetSubSystem(0, 0, 0, 0, m_Config.NetworkHostname, NetDeviceType);
+		else
+			m_pNet = new CNetSubSystem(
+				m_Config.NetworkIPAddress.Get(),
+				m_Config.NetworkSubnetMask.Get(),
+				m_Config.NetworkDefaultGateway.Get(),
+				m_Config.NetworkDNSServer.Get(),
+				m_Config.NetworkHostname,
+				NetDeviceType
+			);
+
+		if (!m_pNet->Initialize(false))
+			return false;
+	}
 
 	if (!m_MT32Pi.Initialize(bSerialMIDIEnabled))
 		return false;
