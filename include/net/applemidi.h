@@ -31,13 +31,13 @@
 class CAppleMIDIParticipant : protected CTask
 {
 public:
-	using MIDIReceiveHandler = void (*)(const u8* pData, size_t nSize);
+	using TMIDIReceiveHandler = void (*)(const u8* pData, size_t nSize);
 
 	CAppleMIDIParticipant(CBcmRandomNumberGenerator* pRandom);
 	~CAppleMIDIParticipant();
 
 	bool Initialize();
-	void RegisterMIDIReceiveHandler(MIDIReceiveHandler pHandler) { m_pReceiveHandler = pHandler; }
+	void RegisterMIDIReceiveHandler(TMIDIReceiveHandler pHandler) { m_pReceiveHandler = pHandler; }
 
 	virtual void Run() override;
 
@@ -69,7 +69,7 @@ private:
 	int m_nMIDIResult;
 
 	// Handler for received MIDI packets
-	MIDIReceiveHandler m_pReceiveHandler;
+	TMIDIReceiveHandler m_pReceiveHandler;
 
 	// Participant state machine
 	enum class TState

@@ -361,8 +361,6 @@ void CMT32Pi::MainTask()
 						pLogger->Write(MT32PiName, LogNotice, "AppleMIDI receiver initialized");
 					}
 				}
-
-				pLogger->Write(MT32PiName, LogNotice, "Web server up");
 			}
 			else if (m_bNetworkReady && !bNetIsRunning)
 			{

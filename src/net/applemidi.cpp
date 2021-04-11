@@ -32,7 +32,7 @@
 
 // #define APPLEMIDI_DEBUG
 
-constexpr u16 ControlPort = 5000;
+constexpr u16 ControlPort = 5004;
 constexpr u16 MIDIPort    = ControlPort + 1;
 
 constexpr u16 AppleMIDISignature = 0xFFFF;
@@ -98,18 +98,12 @@ struct TAppleMIDIReceiverFeedback
 	u32 nSequence;
 };
 
-struct TRTPHeader
+struct TRTPMIDI
 {
 	u16 nFlags;
 	u16 nSequence;
 	u32 nTimestamp;
 	u32 nSSRC;
-};
-
-struct TRTPMIDI
-{
-	TRTPHeader RTPHeader;
-	u8 nHeader;
 };
 #pragma pack(pop)
 
@@ -124,33 +118,32 @@ u64 GetSyncClock()
 
 bool ParseInvitationPacket(const u8* pBuffer, size_t nSize, TAppleMIDIInvitation* pOutPacket)
 {
+	const TAppleMIDIInvitation* const pInPacket = reinterpret_cast<const TAppleMIDIInvitation*>(pBuffer);
+
 	constexpr size_t nSizeWithoutName = sizeof(TAppleMIDIInvitation) - sizeof(TAppleMIDIInvitation::Name);
 	if (nSize < nSizeWithoutName)
 		return false;
 
-	const u16 nSignature = ntohs(*(reinterpret_cast<const u16*>(pBuffer)));
+	const u16 nSignature = ntohs(pInPacket->nSignature);
 	if (nSignature != AppleMIDISignature)
 		return false;
 
-	const u16 nCommand = ntohs(*(reinterpret_cast<const u16*>(pBuffer + 2)));
+	const u16 nCommand = ntohs(pInPacket->nCommand);
 	if (nCommand != Invitation)
 		return false;
 
-	const u32 nVersion = ntohl(*(reinterpret_cast<const u32*>(pBuffer + 4)));
+	const u32 nVersion = ntohl(pInPacket->nVersion);
 	if (nVersion != AppleMIDIVersion)
 		return false;
-
-	const u32 nInitiatorToken = ntohl(*(reinterpret_cast<const u32*>(pBuffer + 8)));
-	const u32 nSSRC = ntohl(*(reinterpret_cast<const u32*>(pBuffer + 12)));
 
 	pOutPacket->nSignature = nSignature;
 	pOutPacket->nCommand = nCommand;
 	pOutPacket->nVersion = nVersion;
-	pOutPacket->nInitiatorToken = nInitiatorToken;
-	pOutPacket->nSSRC = nSSRC;
+	pOutPacket->nInitiatorToken = ntohl(pInPacket->nInitiatorToken);
+	pOutPacket->nSSRC = ntohl(pInPacket->nSSRC);
 
 	if (nSize > nSizeWithoutName)
-		strncpy(pOutPacket->Name, reinterpret_cast<const char*>(pBuffer + 16), sizeof(pOutPacket->Name));
+		strncpy(pOutPacket->Name, pInPacket->Name, sizeof(pOutPacket->Name));
 	else
 		strncpy(pOutPacket->Name, "<unknown>", sizeof(pOutPacket->Name));
 
@@ -159,60 +152,284 @@ bool ParseInvitationPacket(const u8* pBuffer, size_t nSize, TAppleMIDIInvitation
 
 bool ParseEndSessionPacket(const u8* pBuffer, size_t nSize, TAppleMIDIEndSession* pOutPacket)
 {
+	const TAppleMIDIEndSession* const pInPacket = reinterpret_cast<const TAppleMIDIEndSession*>(pBuffer);
+
 	if (nSize < sizeof(TAppleMIDIEndSession))
 		return false;
 
-	const u16 nSignature = ntohs(*(reinterpret_cast<const u16*>(pBuffer)));
+	const u16 nSignature = ntohs(pInPacket->nSignature);
 	if (nSignature != AppleMIDISignature)
 		return false;
 
-	const u16 nCommand = ntohs(*(reinterpret_cast<const u16*>(pBuffer + 2)));
+	const u16 nCommand = ntohs(pInPacket->nCommand);
 	if (nCommand != EndSession)
 		return false;
 
-	const u32 nVersion = ntohl(*(reinterpret_cast<const u32*>(pBuffer + 4)));
+	const u32 nVersion = ntohl(pInPacket->nVersion);
 	if (nVersion != AppleMIDIVersion)
 		return false;
-
-	const u32 nInitiatorToken = ntohl(*(reinterpret_cast<const u32*>(pBuffer + 8)));
-	const u32 nSSRC = ntohl(*(reinterpret_cast<const u32*>(pBuffer + 12)));
 
 	pOutPacket->nSignature = nSignature;
 	pOutPacket->nCommand = nCommand;
 	pOutPacket->nVersion = nVersion;
-	pOutPacket->nInitiatorToken = nInitiatorToken;
-	pOutPacket->nSSRC = nSSRC;
+	pOutPacket->nInitiatorToken = ntohl(pInPacket->nInitiatorToken);
+	pOutPacket->nSSRC = ntohl(pInPacket->nSSRC);
 
 	return true;
 }
 
 bool ParseSyncPacket(const u8* pBuffer, size_t nSize, TAppleMIDISync* pOutPacket)
 {
+	const TAppleMIDISync* const pInPacket = reinterpret_cast<const TAppleMIDISync*>(pBuffer);
+
 	if (nSize != sizeof(TAppleMIDISync))
 		return false;
 
-	const u32 nSignature = ntohs(*(reinterpret_cast<const u16*>(pBuffer)));
+	const u32 nSignature = ntohs(pInPacket->nSignature);
 	if (nSignature != AppleMIDISignature)
 		return false;
 
-	const u32 nCommand = ntohs(*(reinterpret_cast<const u16*>(pBuffer + 2)));
+	const u32 nCommand = ntohs(pInPacket->nCommand);
 	if (nCommand != Sync)
 		return false;
 
 	pOutPacket->nSignature = nSignature;
 	pOutPacket->nCommand = nCommand;
-	pOutPacket->nSSRC = ntohl(*(reinterpret_cast<const u32*>(pBuffer + 4)));
-	pOutPacket->nCount = *(pBuffer + 8);
-	pOutPacket->nTimestamps[0] = ntohll(*(reinterpret_cast<const u64*>(pBuffer + 12)));
-	pOutPacket->nTimestamps[1] = ntohll(*(reinterpret_cast<const u64*>(pBuffer + 20)));
-	pOutPacket->nTimestamps[2] = ntohll(*(reinterpret_cast<const u64*>(pBuffer + 28)));
+	pOutPacket->nSSRC = ntohl(pInPacket->nSSRC);
+	pOutPacket->nCount = pInPacket->nCount;
+	pOutPacket->nTimestamps[0] = ntohll(pInPacket->nTimestamps[0]);
+	pOutPacket->nTimestamps[1] = ntohll(pInPacket->nTimestamps[1]);
+	pOutPacket->nTimestamps[2] = ntohll(pInPacket->nTimestamps[2]);
 
 	return true;
 }
 
-bool ParseMIDIPacket(const u8* pBuffer, size_t nSize, TRTPMIDI* pOutPacket, const u8** pOutMIDIData, size_t* pOutMIDIDataSize)
+u8 ParseMIDIDeltaTime(const u8* pBuffer)
 {
-	const u16 nRTPFlags = ntohs(*(reinterpret_cast<const u16*>(pBuffer)));
+	u8 nLength = 0;
+	u32 nDeltaTime = 0;
+
+	while (nLength < 4)
+	{
+		nDeltaTime <<= 7;
+		nDeltaTime |= pBuffer[nLength] & 0x7F;
+
+		// Upper bit not set; end of timestamp
+		if ((pBuffer[nLength++] & (1 << 7)) == 0)
+			break;
+	}
+
+	return nLength;
+}
+
+size_t ParseSysExCommand(const u8* pBuffer, size_t nSize, CAppleMIDIParticipant::TMIDIReceiveHandler pReceiveHandler)
+{
+	size_t nBytesParsed = 1;
+	const u8 nHead = pBuffer[0];
+	u8 nTail = 0;
+
+	while (nBytesParsed < nSize && !(nTail == 0xF0 || nTail == 0xF7 || nTail == 0xF4))
+		nTail = pBuffer[nBytesParsed++];
+
+	size_t nReceiveLength = nBytesParsed;
+
+	// First segmented SysEx packet
+	if (nHead == 0xF0 && nTail == 0xF0)
+	{
+#ifdef APPLEMIDI_DEBUG
+		CLogger::Get()->Write(AppleMIDIName, LogNotice, "Received segmented SysEx (first)");
+#endif
+		--nReceiveLength;
+	}
+
+	// Middle segmented SysEx packet
+	else if (nHead == 0xF7 && nTail == 0xF0)
+	{
+#ifdef APPLEMIDI_DEBUG
+		CLogger::Get()->Write(AppleMIDIName, LogNotice, "Received segmented SysEx (middle)");
+#endif
+		++pBuffer;
+		nBytesParsed -= 2;
+	}
+
+	// Last segmented SysEx packet
+	else if (nHead == 0xF7 && nTail == 0xF7)
+	{
+#ifdef APPLEMIDI_DEBUG
+		CLogger::Get()->Write(AppleMIDIName, LogNotice, "Received segmented SysEx (last)");
+#endif
+		++pBuffer;
+		--nReceiveLength;
+	}
+
+	// Cancelled segmented SysEx packet
+	else if (nHead == 0xF7 && nTail == 0xF4)
+	{
+#ifdef APPLEMIDI_DEBUG
+		CLogger::Get()->Write(AppleMIDIName, LogNotice, "Received cancelled SysEx");
+#endif
+		nReceiveLength = 1;
+	}
+
+#ifdef APPLEMIDI_DEBUG
+	else
+	{
+		CLogger::Get()->Write(AppleMIDIName, LogNotice, "Received complete SysEx");
+	}
+#endif
+
+	pReceiveHandler(pBuffer, nReceiveLength);
+
+	return nBytesParsed;
+}
+
+size_t ParseMIDICommand(const u8* pBuffer, size_t nSize, u8& nRunningStatus, CAppleMIDIParticipant::TMIDIReceiveHandler pReceiveHandler)
+{
+	size_t nBytesParsed = 0;
+	u8 nByte = pBuffer[0];
+
+	// System Real-Time message - single byte, handle immediately
+	// Can appear anywhere in the stream, even in between status/data bytes
+	if (nByte >= 0xF8)
+	{
+		// Ignore undefined System Real-Time
+		if (nByte != 0xF9 && nByte != 0xFD)
+			pReceiveHandler(&nByte, 1);
+
+		return 1;
+	}
+
+	// Is it a status byte?
+	if (nByte & 0x80)
+	{
+		// Update running status if non Real-Time System status
+		if (nByte < 0xF0)
+			nRunningStatus = nByte;
+		else
+			nRunningStatus = 0;
+
+		++nBytesParsed;
+	}
+	else
+	{
+		// First byte not a status byte and no running status - invalid
+		if (!nRunningStatus)
+			return 0;
+
+		// Use running status
+		nByte = nRunningStatus;
+	}
+
+	// Channel messages
+	if (nByte < 0xF0)
+	{
+		// How many data bytes?
+		switch (nByte & 0xF0)
+		{
+			case 0x80:				// Note off
+			case 0x90:				// Note on
+			case 0xA0:				// Polyphonic key pressure/aftertouch
+			case 0xB0:				// Control change
+			case 0xE0:				// Pitch bend
+				nBytesParsed += 2;
+				break;
+
+			case 0xC0:				// Program change
+			case 0xD0:				// Channel pressure/aftertouch
+				nBytesParsed += 1;
+				break;
+		}
+
+		// Handle command
+		pReceiveHandler(pBuffer, nBytesParsed);
+		return nBytesParsed;
+	}
+
+	// System common commands
+	switch (nByte)
+	{
+		case 0xF0:					// Start of System Exclusive
+		case 0xF7:					// End of Exclusive
+			return ParseSysExCommand(pBuffer, nSize, pReceiveHandler);
+
+		case 0xF1:					// MIDI Time Code Quarter Frame
+		case 0xF3:					// Song Select
+			++nBytesParsed;
+			break;
+
+		case 0xF2:					// Song Position Pointer
+			nBytesParsed += 2;
+			break;
+	}
+
+	pReceiveHandler(pBuffer, nBytesParsed);
+	return nBytesParsed;
+}
+
+bool ParseMIDICommandSection(const u8* pBuffer, size_t nSize, CAppleMIDIParticipant::TMIDIReceiveHandler pReceiveHandler)
+{
+	// Must have at least a header byte and a single status byte
+	if (nSize < 2)
+		return false;
+
+	size_t nMIDICommandsProcessed = 0;
+	size_t nBytesRemaining = nSize - 1;
+	u8 nRunningStatus = 0;
+
+	const u8 nMIDIHeader = pBuffer[0];
+	const u8* pMIDICommands = pBuffer + 1;
+
+	// Lower 4 bits of the header is length
+	u16 nMIDICommandLength = nMIDIHeader & 0x0F;
+
+	// If B flag is set, length value is 12 bits
+	if (nMIDIHeader & (1 << 7))
+	{
+		nMIDICommandLength <<= 8;
+		nMIDICommandLength |= pMIDICommands[0];
+		++pMIDICommands;
+		--nBytesRemaining;
+	}
+
+	if (nMIDICommandLength > nBytesRemaining)
+	{
+		CLogger::Get()->Write(AppleMIDIName, LogError, "Invalid MIDI command length");
+		return false;
+	}
+
+	// Begin decoding the command list
+	while (nMIDICommandLength)
+	{
+		// If Z flag is set, first list entry is a delta time
+		if (nMIDICommandsProcessed || nMIDIHeader & (1 << 5))
+		{
+			const u8 nBytesParsed = ParseMIDIDeltaTime(pMIDICommands);
+			nMIDICommandLength -= nBytesParsed;
+			pMIDICommands += nBytesParsed;
+		}
+
+		if (nMIDICommandLength)
+		{
+			const size_t nBytesParsed = ParseMIDICommand(pMIDICommands, nMIDICommandLength, nRunningStatus, pReceiveHandler);
+			nMIDICommandLength -= nBytesParsed;
+			pMIDICommands += nBytesParsed;
+			++nMIDICommandsProcessed;
+		}
+	}
+
+	return true;
+}
+
+bool ParseMIDIPacket(const u8* pBuffer, size_t nSize, TRTPMIDI* pOutPacket, CAppleMIDIParticipant::TMIDIReceiveHandler pReceiveHandler)
+{
+	assert(pReceiveHandler != nullptr);
+
+	const TRTPMIDI* const pInPacket = reinterpret_cast<const TRTPMIDI*>(pBuffer);
+	const u16 nRTPFlags = ntohs(pInPacket->nFlags);
+
+	// Check size (RTP-MIDI header plus MIDI command section header)
+	if (nSize < sizeof(TRTPMIDI) + 1)
+		return false;
 
 	// Check version
 	if (((nRTPFlags >> 14) & 0x03) != RTPMIDIVersion)
@@ -226,59 +443,15 @@ bool ParseMIDIPacket(const u8* pBuffer, size_t nSize, TRTPMIDI* pOutPacket, cons
 	if ((nRTPFlags & 0xFF) != RTPMIDIPayloadType)
 		return false;
 
-	const u16 nSequence = ntohs(*(reinterpret_cast<const u16*>(pBuffer + 2)));
-	const u32 nTimestamp = ntohl(*(reinterpret_cast<const u32*>(pBuffer + 4)));
-	const u32 nSSRC = ntohl(*(reinterpret_cast<const u32*>(pBuffer + 8)));
-
-	pOutPacket->RTPHeader.nFlags = nRTPFlags;
-	pOutPacket->RTPHeader.nSequence = nSequence;
-	pOutPacket->RTPHeader.nTimestamp = nTimestamp;
-	pOutPacket->RTPHeader.nSSRC = nSSRC;
+	pOutPacket->nFlags = nRTPFlags;
+	pOutPacket->nSequence = ntohs(pInPacket->nSequence);
+	pOutPacket->nTimestamp = ntohl(pInPacket->nTimestamp);
+	pOutPacket->nSSRC = ntohl(pInPacket->nSSRC);
 
 	// RTP-MIDI variable-length header
-	const u8 nHeader = *(pBuffer + 12);
-	const u8* pMIDIData = pBuffer + 13;
-
-	// Lower 4 bits of the header is is length
-	u16 nMIDIDataSize = nHeader & 0x0F;
-
-	// If B flag is set, length value is 12 bits
-	if (nHeader & (1 << 7))
-	{
-		nMIDIDataSize <<= 8;
-		nMIDIDataSize |= *pMIDIData;
-		++pMIDIData;
-	}
-
-	const u8 nHead = *pMIDIData;
-	const u8 nTail = *(pMIDIData + nMIDIDataSize - 1);
-
-	// First segmented SysEx packet
-	if (nHead == 0xF0 && nTail == 0xF0)
-		--nMIDIDataSize;
-
-	// Middle segmented SysEx packet
-	else if (nHead == 0xF7 && nTail == 0xF0)
-	{
-		++pMIDIData;
-		nMIDIDataSize -= 2;
-	}
-
-	// Last segmented SysEx packet
-	else if (nHead == 0xF7 && nTail == 0xF7)
-	{
-		++pMIDIData;
-		--nMIDIDataSize;
-	}
-
-	// Cancelled segmented SysEx packet
-	else if (nHead == 0xF7 && nTail == 0xF4)
-		nMIDIDataSize = 1;
-
-	*pOutMIDIData = pMIDIData;
-	*pOutMIDIDataSize = nMIDIDataSize;
-
-	return true;
+	const u8* const pMIDICommandSection = pBuffer + sizeof(TRTPMIDI);
+	size_t nRemaining = nSize - sizeof(TRTPMIDI);
+	return ParseMIDICommandSection(pMIDICommandSection, nRemaining, pReceiveHandler);
 }
 
 CAppleMIDIParticipant::CAppleMIDIParticipant(CBcmRandomNumberGenerator* pRandom)
@@ -446,7 +619,6 @@ void CAppleMIDIParticipant::MIDIInvitationState()
 
 #ifdef APPLEMIDI_DEBUG
 		pLogger->Write(AppleMIDIName, LogNotice, "<-- MIDI invitation");
-		//DumpInvitationPacket(&InvitationPacket);
 #endif
 
 		if (SendAcceptInvitationPacket(m_pMIDISocket, m_nInitiatorMIDIPort))
@@ -480,9 +652,6 @@ void CAppleMIDIParticipant::ConnectedState()
 	TRTPMIDI MIDIPacket;
 	TAppleMIDISync SyncPacket;
 
-	const u8* pMIDIData;
-	size_t nMIDIDataSize;
-
 	if (m_nControlResult > 0)
 	{
 		if (ParseEndSessionPacket(m_ControlBuffer, m_nControlResult, &EndSessionPacket))
@@ -502,17 +671,12 @@ void CAppleMIDIParticipant::ConnectedState()
 
 	if (m_nMIDIResult > 0)
 	{
-		if (ParseMIDIPacket(m_MIDIBuffer, m_nMIDIResult, &MIDIPacket, &pMIDIData, &nMIDIDataSize))
-		{
-			m_nSequence = MIDIPacket.RTPHeader.nSequence;
-			if (m_pReceiveHandler)
-				m_pReceiveHandler(pMIDIData, nMIDIDataSize);
-		}
+		if (ParseMIDIPacket(m_MIDIBuffer, m_nMIDIResult, &MIDIPacket, m_pReceiveHandler))
+			m_nSequence = MIDIPacket.nSequence;
 		else if (ParseSyncPacket(m_MIDIBuffer, m_nMIDIResult, &SyncPacket))
 		{
 #ifdef APPLEMIDI_DEBUG
 			pLogger->Write(AppleMIDIName, LogNotice, "<-- Sync %d", SyncPacket.nCount);
-			//DumpSyncPacket(&SyncPacket);
 #endif
 
 			if (SyncPacket.nSSRC == m_nInitiatorSSRC && (SyncPacket.nCount == 0 || SyncPacket.nCount == 2))
@@ -522,7 +686,9 @@ void CAppleMIDIParticipant::ConnectedState()
 				else if (SyncPacket.nCount == 2)
 				{
 					m_nOffsetEstimate = ((SyncPacket.nTimestamps[2] + SyncPacket.nTimestamps[0]) / 2) - SyncPacket.nTimestamps[1];
+#ifdef APPLEMIDI_DEBUG
 					pLogger->Write(AppleMIDIName, LogNotice, "Offset estimate: %llu", m_nOffsetEstimate);
+#endif
 				}
 
 				m_nLastSyncTime = GetSyncClock();
@@ -612,7 +778,6 @@ bool CAppleMIDIParticipant::SendAcceptInvitationPacket(CSocket* pSocket, u16 nPo
 
 #ifdef APPLEMIDI_DEBUG
 	CLogger::Get()->Write(AppleMIDIName, LogNotice, "--> Accept invitation");
-	//DumpInvitationPacket(&AcceptPacket);
 #endif
 
 	const size_t nSendSize = sizeof(AcceptPacket) - sizeof(AcceptPacket.Name) + strlen(AcceptPacket.Name) + 1;
@@ -637,7 +802,6 @@ bool CAppleMIDIParticipant::SendSyncPacket(u64 nTimestamp1, u64 nTimestamp2)
 
 #ifdef APPLEMIDI_DEBUG
 	CLogger::Get()->Write(AppleMIDIName, LogNotice, "--> Sync 1");
-	//DumpSyncPacket(&SyncPacket);
 #endif
 
 	return SendPacket(m_pControlSocket, m_nInitiatorMIDIPort, &SyncPacket, sizeof(SyncPacket));
@@ -654,8 +818,7 @@ bool CAppleMIDIParticipant::SendFeedbackPacket()
 	};
 
 #ifdef APPLEMIDI_DEBUG
-	CLogger::Get()->Write(AppleMIDIName, LogNotice, "--> Feedback");
-	//DumpSyncPacket(&SyncPacket);
+	CLogger::Get()->Write(AppleMIDIName, LogNotice, "--> Feedback");;
 #endif
 
 	return SendPacket(m_pControlSocket, m_nInitiatorMIDIPort, &FeedbackPacket, sizeof(FeedbackPacket));
