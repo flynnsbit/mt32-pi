@@ -21,6 +21,7 @@
 //
 
 #include <circle/i2ssoundbasedevice.h>
+#include <circle/hdmisoundbasedevice.h>
 #include <circle/memory.h>
 #include <circle/pwmsoundbasedevice.h>
 #include <circle/serial.h>
@@ -187,6 +188,11 @@ bool CMT32Pi::Initialize(bool bSerialMIDIAvailable)
 
 		if (pConfig->AudioI2CDACInit == CConfig::TAudioI2CDACInit::PCM51xx)
 			InitPCM51xx(pConfig->AudioI2CDACAddress);
+	}
+	else if (pConfig->AudioOutputDevice == CConfig::TAudioOutputDevice::HDMI)
+	{
+		m_pSound = new CHDMISoundBaseDevice(m_pInterrupt, pConfig->AudioSampleRate, pConfig->AudioChunkSize);
+		m_pSound->SetWriteFormat(TSoundFormat::SoundFormatSigned16);
 	}
 	else
 	{
